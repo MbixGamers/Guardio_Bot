@@ -1,0 +1,33 @@
+Here is your revised prompt with the corrected ticket flow and written in clean paragraph format without emojis:
+
+---
+
+Create a Discord bot using Node.js and discord.js v14 (or the latest stable version). The bot must use slash commands and follow a modular and scalable structure with separate command handlers, event handlers, configuration files, and utility modules. The bot should run using a Discord token and client ID stored in environment variables.
+
+The bot must have two main systems: a security system and a ticket system.
+
+The security system must include three admin-only slash commands: /security on, /security off, and /security log. The /security on command enables monitoring, while /security off disables it. The /security log command allows administrators to set a specific channel where all security-related logs will be sent.
+
+When the security system is enabled, the bot must continuously monitor server activity. It should detect newly created accounts (for example, accounts younger than a configurable number of days), message spam where users send many messages in a short period, mass mentions such as excessive user pings or everyone mentions, and cases where the same message is sent across multiple channels. When suspicious behavior is detected, the bot should flag the user and take configurable actions such as warning, timing out, or kicking the user. All actions and detections must be logged in the configured log channel with relevant details.
+
+The bot must also include anti-nuke protection by tracking server changes within short time intervals (around 10 seconds). It should monitor rapid creation, deletion, or modification of roles and channels. If these actions exceed defined thresholds, the bot should flag the activity as a potential nuke attempt and log detailed information including the responsible user, the actions performed, and timestamps.
+
+The ticket system must support full panel and button configuration. Admin-only commands must include /create panel, which opens a modal asking for a panel title and description and automatically assigns a panel number, and /delete panel, which allows selection and deletion of an existing panel. Another admin command, /add button, must open a modal where the admin inputs a unique button name, emoji, description, a target category where tickets will be created, and up to 10 support roles that will have access to tickets created from that button. There must also be a /delete button command with a dropdown to remove existing buttons.
+
+The /send panel command must allow the admin to select a panel by its number and choose a channel where the panel embed with its configured buttons will be sent.
+
+The ticket creation flow must work as follows: when a user clicks a ticket button, the bot must always display a modal if a questionnaire has been configured for that button. The ticket must not be created immediately on button click. Instead, the ticket is only created after the user successfully submits the modal. The modal should include any configured fields such as text inputs and dropdown selections. Once the user submits the modal, the bot creates a ticket channel under the specified category. The channel permissions must include the ticket creator, the configured support roles, and administrators. After creation, the bot sends an embed inside the ticket channel showing the user’s name, avatar, submitted questionnaire responses, ticket type, and a timestamp indicating when the ticket was created. The bot should also ping the support roles and the user in the ticket channel.
+
+There must be an advanced configuration command /config ticket that allows admins to select a panel and a specific button and attach a customizable questionnaire to it. This questionnaire should support multiple fields such as text inputs and dropdown menus. For example, it can include a text field for age and a dropdown for department selection with predefined options. These inputs must appear in the modal shown during ticket creation and the responses must be included in the ticket embed.
+
+Each ticket channel must include controls such as a close button and a claim button. The close button can be used by the ticket creator and support roles to close the ticket. The claim button must track which staff member clicked it but should not restrict the ticket to only that staff member; all support staff should still be able to interact in the ticket.
+
+The bot must include an advanced staff activity tracking system. It should monitor how staff interact within tickets and assign credit based on actual participation rather than just claims. If a staff member claims a ticket but does not send any messages, and another staff member actively participates by sending multiple messages, the credit should be assigned to the active staff member instead of the one who claimed it. This data should be used to maintain a leaderboard of staff activity.
+
+There must be a /mod checks command available to all support roles that displays the leaderboard of ticket handling activity. There must also be a /reset mod checks command that is admin-only and resets all leaderboard data to zero.
+
+For data storage, use SQLite (preferred) or JSON to persist panels, buttons, ticket configurations, security settings, logs, and staff activity data.
+
+The bot must use embeds for all user-facing messages and must utilize Discord components such as buttons, modals, and select menus. The code should follow best practices, include proper error handling, logging, and be well-structured and maintainable.
+
+Finally, provide the complete working bot code along with setup instructions, dependency installation steps, and an example .env file.
