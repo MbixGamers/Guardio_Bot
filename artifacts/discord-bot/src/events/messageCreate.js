@@ -1,19 +1,19 @@
-import { get } from '../db/database.js';
-import { spamTracker, mentionTracker, duplicateTracker } from '../utils/securityMonitor.js';
-import { recordTicketMessage } from '../utils/ticketManager.js';
+import { getSecurity } from '../store.js';
+import { checkSpam, checkMentions, checkDuplicates } from '../utils/securityMonitor.js';
+import { handleTicketMessage } from '../utils/ticketManager.js';
 
 export default {
   name: 'messageCreate',
   async execute(message, client) {
     if (message.author.bot || !message.guild) return;
 
-    await recordTicketMessage(message);
+    await handleTicketMessage(message);
 
-    const settings = get(`SELECT * FROM security_settings WHERE guild_id = ?`, [message.guild.id]);
+    const settings = getSecurity(message.guild.id);
     if (!settings?.enabled) return;
 
-    await spamTracker(message, settings, client);
-    await mentionTracker(message, settings, client);
-    await duplicateTracker(message, settings, client);
+    await checkSpam(message, settings);
+    await checkMentions(message, settings);
+    await checkDuplicates(message, settings);
   },
 };

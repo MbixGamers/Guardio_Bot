@@ -1,154 +1,108 @@
 import {
-  ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder,
-  ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle
+  ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle
 } from 'discord.js';
-import { get, all, run } from '../db/database.js';
-import { ticketEmbed, successEmbed, errorEmbed, infoEmbed } from './embeds.js';
+import {
+  getButton, getQuestionnaire, getOpenTicket, createTicket,
+  closeTicket, claimTicket, recordMessage, getTicketMsgs,
+  getTicketByChannel, creditStaff, isBlacklisted
+} from '../store.js';
+import { ok, err, info } from './embeds.js';
+import { EmbedBuilder } from 'discord.js';
 import { isAdmin, isSupportRole } from './permissions.js';
 
-export async function handleTicketButton(interaction, client) {
-  const buttonName = interaction.customId.replace('ticket_open_', '');
-  const button = get(`SELECT * FROM buttons WHERE guild_id = ? AND name = ?`, [interaction.guild.id, buttonName]);
+export async function handleTicketButton(interaction) {
+  const buttonName = interaction.customId.split('|')[1];
+  const g = interaction.guild.id;
 
-  if (!button) {
-    return interaction.reply({ embeds: [errorEmbed('Error', 'Button configuration not found.')], ephemeral: true });
+  if (isBlacklisted(g, interaction.user.id)) {
+    return interaction.reply({ embeds: [err('Blacklisted', 'You are not allowed to open tickets.')], ephemeral: true });
   }
 
-  const questionnaire = get(`SELECT * FROM questionnaires WHERE button_id = ?`, [button.id]);
-  const fields = questionnaire ? JSON.parse(questionnaire.fields) : [];
-  const textFields = fields.filter(f => f.type === 'text').slice(0, 5);
+  const button = getButton(g, buttonName);
+  if (!button) return interaction.reply({ embeds: [err('Error', 'Button not configured.')], ephemeral: true });
 
-  if (textFields.length > 0) {
-    const modal = new ModalBuilder()
-      .setCustomId(`ticket_modal_${buttonName}`)
-      .setTitle(`Open Ticket: ${button.name}`);
+  const fields = getQuestionnaire(g, button.id);
 
-    for (const field of textFields) {
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId(field.id)
-            .setLabel(field.label)
-            .setStyle(field.paragraph ? TextInputStyle.Paragraph : TextInputStyle.Short)
-            .setRequired(field.required ?? true)
-            .setPlaceholder(field.placeholder || '')
-        )
-      );
+  if (fields.length) {
+    const modal = new ModalBuilder().setCustomId(`ticket_modal|${buttonName}`).setTitle(`Open Ticket: ${buttonName}`);
+    for (const f of fields.slice(0, 5)) {
+      modal.addComponents(new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId(f.id).setLabel(f.label)
+          .setStyle(TextInputStyle.Short).setRequired(true)
+      ));
     }
-
-    await interaction.showModal(modal);
-  } else {
-    await createTicket(interaction, buttonName, [], client);
+    return interaction.showModal(modal);
   }
+
+  await openTicket(interaction, buttonName, []);
 }
 
-export async function handleTicketModalSubmit(interaction, client) {
-  const buttonName = interaction.customId.replace('ticket_modal_', '');
-  const button = get(`SELECT * FROM buttons WHERE guild_id = ? AND name = ?`, [interaction.guild.id, buttonName]);
+export async function handleTicketModal(interaction) {
+  const buttonName = interaction.customId.split('|')[1];
+  const g = interaction.guild.id;
+  const button = getButton(g, buttonName);
+  if (!button) return interaction.reply({ embeds: [err('Error', 'Config not found.')], ephemeral: true });
 
-  if (!button) {
-    return interaction.reply({ embeds: [errorEmbed('Error', 'Configuration not found.')], ephemeral: true });
-  }
+  const fields = getQuestionnaire(g, button.id);
+  const responses = fields.map(f => {
+    try { return { name: f.label, value: interaction.fields.getTextInputValue(f.id) || 'N/A', inline: false }; }
+    catch { return null; }
+  }).filter(Boolean);
 
-  const questionnaire = get(`SELECT * FROM questionnaires WHERE button_id = ?`, [button.id]);
-  const fields = questionnaire ? JSON.parse(questionnaire.fields) : [];
-
-  const responses = [];
-  for (const field of fields.filter(f => f.type === 'text')) {
-    try {
-      const value = interaction.fields.getTextInputValue(field.id).trim();
-      responses.push({ name: field.label, value: value || 'N/A' });
-    } catch {}
-  }
-
-  await createTicket(interaction, buttonName, responses, client);
+  await openTicket(interaction, buttonName, responses);
 }
 
-async function createTicket(interaction, buttonName, responses, client) {
-  const button = get(`SELECT * FROM buttons WHERE guild_id = ? AND name = ?`, [interaction.guild.id, buttonName]);
-  if (!button) return;
+async function openTicket(interaction, buttonName, responses) {
+  const g = interaction.guild.id;
 
-  // Check for existing open ticket
-  const existing = get(
-    `SELECT t.* FROM tickets t
-     JOIN buttons b ON t.button_id = b.id
-     WHERE t.guild_id = ? AND t.user_id = ? AND t.status = 'open' AND b.name = ?`,
-    [interaction.guild.id, interaction.user.id, buttonName]
-  );
+  if (isBlacklisted(g, interaction.user.id)) {
+    const r = { embeds: [err('Blacklisted', 'You are not allowed to open tickets.')], ephemeral: true };
+    return interaction.replied || interaction.deferred ? interaction.editReply(r) : interaction.reply(r);
+  }
 
+  const existing = getOpenTicket(g, interaction.user.id, buttonName);
   if (existing) {
-    const ch = await interaction.guild.channels.fetch(existing.channel_id).catch(() => null);
-    if (ch) {
-      const reply = { embeds: [infoEmbed('Ticket Exists', `You already have an open ticket: <#${existing.channel_id}>`)], ephemeral: true };
-      return interaction.replied || interaction.deferred
-        ? interaction.editReply(reply)
-        : interaction.reply(reply);
-    }
-    run(`UPDATE tickets SET status = 'closed' WHERE id = ?`, [existing.id]);
+    const ch = await interaction.guild.channels.fetch(existing.channelId).catch(() => null);
+    const r = { embeds: [info('Already Open', ch ? `You already have a ticket: <#${existing.channelId}>` : 'Your old ticket channel was deleted — please try again.')], ephemeral: true };
+    if (!ch) closeTicket(existing.channelId);
+    return interaction.replied || interaction.deferred ? interaction.editReply(r) : interaction.reply(r);
   }
 
-  const replyPayload = { embeds: [infoEmbed('Creating Ticket', 'Setting up your ticket channel...')], ephemeral: true };
-  if (interaction.replied || interaction.deferred) {
-    await interaction.editReply(replyPayload);
-  } else {
-    await interaction.reply(replyPayload);
-  }
+  const replyFn = interaction.replied || interaction.deferred ? 'editReply' : 'reply';
+  await interaction[replyFn]({ embeds: [info('Opening Ticket', 'Creating your channel...')], ephemeral: true });
 
-  const supportRoles = JSON.parse(button.support_roles || '[]');
-
-  const permissionOverwrites = [
-    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+  const button = getButton(g, buttonName);
+  const supportRoles = button.supportRoles ?? [];
+  const perms = [
+    { id: g, deny: [PermissionFlagsBits.ViewChannel] },
     { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ...supportRoles.map(r => ({ id: r, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] })),
   ];
-
-  for (const roleId of supportRoles) {
-    permissionOverwrites.push({
-      id: roleId,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-    });
-  }
-
-  const ticketCount = get(`SELECT COUNT(*) as cnt FROM tickets WHERE guild_id = ?`, [interaction.guild.id]);
-  const channelName = `ticket-${String((ticketCount?.cnt ?? 0) + 1).padStart(4, '0')}-${interaction.user.username.slice(0, 10).replace(/[^a-z0-9]/gi, '').toLowerCase() || 'user'}`;
 
   const channel = await interaction.guild.channels.create({
-    name: channelName,
+    name: `ticket-${interaction.user.username.slice(0, 12).replace(/[^a-z0-9]/gi, '') || 'user'}-${Date.now().toString(36).slice(-4)}`,
     type: ChannelType.GuildText,
-    parent: button.category_id,
-    permissionOverwrites,
-    reason: `Ticket opened by ${interaction.user.tag}`,
+    parent: button.categoryId,
+    permissionOverwrites: perms,
+    reason: `Ticket by ${interaction.user.tag}`,
   });
 
-  const ticketResult = run(
-    `INSERT INTO tickets (guild_id, channel_id, user_id, button_id) VALUES (?, ?, ?, ?)`,
-    [interaction.guild.id, channel.id, interaction.user.id, button.id]
-  );
+  const ticket = createTicket(channel.id, g, interaction.user.id, buttonName);
 
-  const ticketId = ticketResult.lastInsertRowid;
-
-  const embedFields = [
-    { name: 'Opened By', value: interaction.user.tag, inline: true },
-    { name: 'Category', value: button.name, inline: true },
-    ...responses,
-  ];
-
-  const embed = ticketEmbed(
-    `Ticket: ${button.name}`,
-    `Welcome ${interaction.user}! Support will be with you shortly.\n\n${button.description || ''}`,
-    embedFields
-  );
+  const embed = new EmbedBuilder().setColor(0x5865F2)
+    .setTitle(`Ticket: ${buttonName}`)
+    .setDescription(`Welcome ${interaction.user}! Support will be with you shortly.\n\n${button.description || ''}`)
+    .addFields(
+      { name: 'Opened By', value: interaction.user.tag, inline: true },
+      { name: 'Category', value: buttonName, inline: true },
+      ...responses
+    )
+    .setTimestamp();
 
   const controls = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ticket_close_${ticketId}`)
-      .setLabel('Close Ticket')
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji('🔒'),
-    new ButtonBuilder()
-      .setCustomId(`ticket_claim_${ticketId}`)
-      .setLabel('Claim Ticket')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('✋')
+    new ButtonBuilder().setCustomId(`ticket_close|${channel.id}`).setLabel('Close Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒'),
+    new ButtonBuilder().setCustomId(`ticket_claim|${channel.id}`).setLabel('Claim Ticket').setStyle(ButtonStyle.Secondary).setEmoji('✋')
   );
 
   await channel.send({
@@ -157,96 +111,47 @@ async function createTicket(interaction, buttonName, responses, client) {
     components: [controls],
   });
 
-  await interaction.editReply({
-    embeds: [successEmbed('Ticket Created', `Your ticket has been opened: <#${channel.id}>`)],
-  });
+  await interaction.editReply({ embeds: [ok('Ticket Created', `Your ticket is ready: <#${channel.id}>`)] });
 }
 
-export async function handleTicketClose(interaction, client) {
-  const ticketId = parseInt(interaction.customId.replace('ticket_close_', ''));
-  const ticket = get(`SELECT * FROM tickets WHERE id = ?`, [ticketId]);
+export async function handleTicketClose(interaction) {
+  const channelId = interaction.customId.split('|')[1];
+  const ticket = getTicketByChannel(channelId);
 
-  if (!ticket || ticket.status === 'closed') {
-    return interaction.reply({ embeds: [errorEmbed('Error', 'Ticket not found or already closed.')], ephemeral: true });
-  }
+  if (!ticket || ticket.status === 'closed')
+    return interaction.reply({ embeds: [err('Error', 'Ticket not found or already closed.')], ephemeral: true });
 
-  const button = ticket.button_id ? get(`SELECT * FROM buttons WHERE id = ?`, [ticket.button_id]) : null;
-  const supportRoles = button ? JSON.parse(button.support_roles || '[]') : [];
+  const button = ticket.buttonName ? getButton(ticket.guildId, ticket.buttonName) : null;
+  const supportRoles = button?.supportRoles ?? [];
 
-  if (
-    interaction.user.id !== ticket.user_id &&
-    !isAdmin(interaction.member) &&
-    !isSupportRole(interaction.member, supportRoles)
-  ) {
-    return interaction.reply({ embeds: [errorEmbed('Denied', 'You cannot close this ticket.')], ephemeral: true });
-  }
+  if (interaction.user.id !== ticket.userId && !isAdmin(interaction.member) && !isSupportRole(interaction.member, supportRoles))
+    return interaction.reply({ embeds: [err('Denied', 'You cannot close this ticket.')], ephemeral: true });
 
-  assignStaffCredit(ticket);
-  run(`UPDATE tickets SET status = 'closed' WHERE id = ?`, [ticketId]);
+  // Assign staff credit
+  const msgs = getTicketMsgs(ticket.id);
+  let creditTo = ticket.claimedBy;
+  const sorted = Object.entries(msgs).sort((a, b) => b[1] - a[1]);
+  if (sorted.length && (!creditTo || !msgs[creditTo])) creditTo = sorted[0][0];
+  if (creditTo) creditStaff(ticket.guildId, creditTo, Object.values(msgs).reduce((a, b) => a + b, 0));
 
-  await interaction.reply({ embeds: [successEmbed('Ticket Closed', `Closed by ${interaction.user.tag}. Channel will be deleted in 5 seconds.`)] });
+  closeTicket(channelId);
 
-  setTimeout(async () => {
-    await interaction.channel.delete().catch(() => {});
-  }, 5000);
+  await interaction.reply({ embeds: [ok('Ticket Closed', `Closed by ${interaction.user.tag}. Channel deletes in 5s.`)] });
+  setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
 }
 
-export async function handleTicketClaim(interaction, client) {
-  const ticketId = parseInt(interaction.customId.replace('ticket_claim_', ''));
-  const ticket = get(`SELECT * FROM tickets WHERE id = ?`, [ticketId]);
+export async function handleTicketClaim(interaction) {
+  const channelId = interaction.customId.split('|')[1];
+  const ticket = getTicketByChannel(channelId);
+  if (!ticket || ticket.status === 'closed')
+    return interaction.reply({ embeds: [err('Error', 'Ticket not found or closed.')], ephemeral: true });
 
-  if (!ticket || ticket.status === 'closed') {
-    return interaction.reply({ embeds: [errorEmbed('Error', 'Ticket not found or closed.')], ephemeral: true });
-  }
-
-  run(`UPDATE tickets SET claimed_by = ? WHERE id = ?`, [interaction.user.id, ticketId]);
-
-  await interaction.reply({
-    embeds: [infoEmbed('Ticket Claimed', `<@${interaction.user.id}> has claimed this ticket.\nAll support staff can still assist.`)]
-  });
+  claimTicket(channelId, interaction.user.id);
+  await interaction.reply({ embeds: [info('Ticket Claimed', `<@${interaction.user.id}> claimed this ticket. All support can still assist.`)] });
 }
 
-export async function recordTicketMessage(message) {
-  const ticket = get(`SELECT * FROM tickets WHERE channel_id = ? AND status = 'open'`, [message.channel.id]);
-  if (!ticket) return;
-  if (message.author.id === ticket.user_id) return;
-
-  run(
-    `INSERT INTO ticket_messages (ticket_id, user_id, count) VALUES (?, ?, 1)
-     ON CONFLICT(ticket_id, user_id) DO UPDATE SET count = count + 1`,
-    [ticket.id, message.author.id]
-  );
-}
-
-function assignStaffCredit(ticket) {
-  const messages = all(
-    `SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY count DESC`,
-    [ticket.id]
-  );
-
-  let creditUserId = ticket.claimed_by;
-
-  if (messages.length > 0) {
-    const topContributor = messages[0];
-    if (creditUserId) {
-      const claimantMsgs = messages.find(m => m.user_id === creditUserId);
-      if (!claimantMsgs) creditUserId = topContributor.user_id;
-    } else {
-      creditUserId = topContributor.user_id;
-    }
-  }
-
-  if (!creditUserId) return;
-
-  const totalMessages = messages.reduce((s, m) => s + m.count, 0);
-
-  run(
-    `INSERT INTO staff_activity (guild_id, user_id, tickets_handled, messages_sent, credits)
-     VALUES (?, ?, 1, ?, 1)
-     ON CONFLICT(guild_id, user_id) DO UPDATE SET
-       tickets_handled = tickets_handled + 1,
-       messages_sent = messages_sent + ?,
-       credits = credits + 1`,
-    [ticket.guild_id, creditUserId, totalMessages, totalMessages]
-  );
+export async function handleTicketMessage(message) {
+  const ticket = getTicketByChannel(message.channel.id);
+  if (!ticket || ticket.status !== 'open' || message.author.id === ticket.userId) return;
+  recordMessage(ticket.id, message.author.id);
 }

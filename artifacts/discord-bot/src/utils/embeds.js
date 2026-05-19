@@ -1,52 +1,11 @@
 import { EmbedBuilder } from 'discord.js';
 
-export const Colors = {
-  primary: 0x5865F2,
-  success: 0x57F287,
-  warning: 0xFEE75C,
-  danger: 0xED4245,
-  info: 0x5865F2,
-  ticket: 0x5865F2,
-};
+const C = { success: 0x57F287, error: 0xED4245, info: 0x5865F2, warn: 0xFEE75C };
 
-export function successEmbed(title, description) {
-  return new EmbedBuilder()
-    .setColor(Colors.success)
-    .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
-}
+export const embed = (color, title, desc, fields = []) =>
+  new EmbedBuilder().setColor(color).setTitle(title).setDescription(desc).addFields(fields).setTimestamp();
 
-export function errorEmbed(title, description) {
-  return new EmbedBuilder()
-    .setColor(Colors.danger)
-    .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
-}
-
-export function infoEmbed(title, description) {
-  return new EmbedBuilder()
-    .setColor(Colors.primary)
-    .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
-}
-
-export function warningEmbed(title, description) {
-  return new EmbedBuilder()
-    .setColor(Colors.warning)
-    .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
-}
-
-export function ticketEmbed(title, description, fields = []) {
-  const embed = new EmbedBuilder()
-    .setColor(Colors.ticket)
-    .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
-  if (fields.length) embed.addFields(fields);
-  return embed;
-}
+export const ok    = (t, d, f) => embed(C.success, t, d, f);
+export const err   = (t, d)    => embed(C.error,   t, d);
+export const info  = (t, d)    => embed(C.info,    t, d);
+export const warn  = (t, d, f) => embed(C.warn,    t, d, f);

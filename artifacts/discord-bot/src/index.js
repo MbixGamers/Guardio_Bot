@@ -1,7 +1,10 @@
-import { Client, GatewayIntentBits, Collection, Partials } from 'discord.js';
-import { loadCommands } from './handlers/commandHandler.js';
-import { loadEvents } from './handlers/eventHandler.js';
-import { initDatabase } from './db/database.js';
+import { Client, GatewayIntentBits, Collection } from 'discord.js';
+import { readdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { initStore } from './store.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const client = new Client({
   intents: [
@@ -11,13 +14,31 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildModeration,
   ],
-  partials: [Partials.Channel, Partials.Message],
 });
 
 client.commands = new Collection();
+initStore();
 
-initDatabase();
-await loadCommands(client);
-await loadEvents(client);
+// Load commands
+for (const folder of readdirSync(join(__dirname, 'commands'))) {
+  for (const file of readdirSync(join(__dirname, 'commands', folder)).filter(f => f.endsWith('.js'))) {
+    const mod = await import(pathToFileURL(join(__dirname, 'commands', folder, file)).href);
+    if (mod.default?.data) {
+      client.commands.set(mod.default.data.name, mod.default);
+      console.log(`[CMD] ${mod.default.data.name}`);
+    }
+  }
+}
+
+// Load events
+for (const file of readdirSync(join(__dirname, 'events')).filter(f => f.endsWith('.js'))) {
+  const mod = await import(pathToFileURL(join(__dirname, 'events', file)).href);
+  for (const ev of Object.values(mod)) {
+    if (!ev?.name) continue;
+    ev.once ? client.once(ev.name, (...a) => ev.execute(...a, client))
+             : client.on(ev.name, (...a) => ev.execute(...a, client));
+    console.log(`[EVT] ${ev.name}`);
+  }
+}
 
 client.login(process.env.DISCORD_TOKEN);
