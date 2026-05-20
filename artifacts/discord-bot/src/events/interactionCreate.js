@@ -28,13 +28,23 @@ export default {
     if (interaction.isButton()) {
       const [type, ...rest] = interaction.customId.split('|');
 
-      if (type === 'ticket_open')  return handleTicketButton(interaction);
-      if (type === 'ticket_close') return handleTicketClose(interaction);
-      if (type === 'ticket_claim') return handleTicketClaim(interaction);
+      const runButton = async () => {
+        if (type === 'ticket_open')  return handleTicketButton(interaction);
+        if (type === 'ticket_close') return handleTicketClose(interaction);
+        if (type === 'ticket_claim') return handleTicketClaim(interaction);
+        if (type === 'loa_approve' || type === 'loa_deny') {
+          return handleLoaDecision(interaction, type, rest[0], rest[1]);
+        }
+      };
 
-      // LOA approve / deny
-      if (type === 'loa_approve' || type === 'loa_deny') {
-        return handleLoaDecision(interaction, type, rest[0], rest[1]);
+      try { await runButton(); }
+      catch (e) {
+        console.error(`[ERR] button ${interaction.customId}:`, e);
+        try {
+          const payload = { embeds: [err('Error', 'Something went wrong. Please try again.')], ephemeral: true };
+          if (interaction.replied || interaction.deferred) await interaction.followUp(payload);
+          else await interaction.reply(payload);
+        } catch {}
       }
 
       return;
@@ -44,74 +54,76 @@ export default {
     if (interaction.isModalSubmit()) {
       const [type] = interaction.customId.split('|');
 
-      if (type === 'ticket_modal') return handleTicketModal(interaction);
+      const runModal = async () => {
+        if (type === 'ticket_modal') return handleTicketModal(interaction);
 
-      if (interaction.customId === 'panel_create_modal') {
-        const cmd = client.commands.get('create');
-        return cmd?.handleModal?.(interaction);
-      }
+        if (interaction.customId === 'panel_create_modal') {
+          const cmd = client.commands.get('create');
+          return cmd?.handleModal?.(interaction);
+        }
 
-      // LOA apply modal
-      if (interaction.customId === 'loa_apply_modal') {
-        const cmd = client.commands.get('loa');
-        return cmd?.handleModal?.(interaction);
-      }
+        if (interaction.customId === 'loa_apply_modal') {
+          const cmd = client.commands.get('loa');
+          return cmd?.handleModal?.(interaction);
+        }
 
-      // /add button modal — customId: add_button_modal|<pendingKey>
-      if (type === 'add_button_modal') {
-        const key     = interaction.customId.split('|')[1];
-        const pending = getPendingButton(key);
-
-        if (!pending) {
+        if (type === 'add_button_modal') {
+          const key     = interaction.customId.split('|')[1];
+          const pending = getPendingButton(key);
+          if (!pending) {
+            return interaction.reply({
+              embeds: [err('Expired', 'This form has expired. Please run `/add button` again.')],
+              ephemeral: true,
+            });
+          }
+          clearPendingButton(key);
+          const { panelId, categoryId, supportRoles } = pending;
+          const name  = interaction.fields.getTextInputValue('name').trim();
+          const emoji = interaction.fields.getTextInputValue('emoji').trim() || null;
+          const desc  = interaction.fields.getTextInputValue('desc').trim() || null;
+          if (getButton(interaction.guild.id, name)) {
+            return interaction.reply({
+              embeds: [err('Duplicate', `A button named **${name}** already exists.`)],
+              ephemeral: true,
+            });
+          }
+          addButton(interaction.guild.id, Number(panelId), name, emoji, desc, categoryId, supportRoles);
           return interaction.reply({
-            embeds: [err('Expired', 'This form has expired. Please run `/add button` again.')],
+            embeds: [ok(
+              'Button Added',
+              `Button **${emoji ? emoji + ' ' : ''}${name}** has been added.\n` +
+              (supportRoles.length ? `Support roles: ${supportRoles.map(r => `<@&${r}>`).join(', ')}\n` : '') +
+              `Use \`/config ticket\` to add a questionnaire, or \`/send panel\` to deploy the panel.`
+            )],
             ephemeral: true,
           });
         }
 
-        clearPendingButton(key);
-
-        const { panelId, categoryId, supportRoles } = pending;
-        const name  = interaction.fields.getTextInputValue('name').trim();
-        const emoji = interaction.fields.getTextInputValue('emoji').trim() || null;
-        const desc  = interaction.fields.getTextInputValue('desc').trim() || null;
-
-        const existing = getButton(interaction.guild.id, name);
-        if (existing) {
+        if (type === 'config_q') {
+          const buttonId = Number(interaction.customId.split('|')[1]);
+          const fields   = [];
+          for (let i = 1; i <= 5; i++) {
+            const label = interaction.fields.getTextInputValue(`f${i}`).trim();
+            if (label) fields.push({ id: `field_${i}`, label, required: true });
+          }
+          setQuestionnaire(interaction.guild.id, buttonId, fields);
           return interaction.reply({
-            embeds: [err('Duplicate', `A button named **${name}** already exists.`)],
+            embeds: [ok('Questionnaire Set', fields.length
+              ? `**${fields.length}** field(s) configured:\n${fields.map(f => `• ${f.label}`).join('\n')}`
+              : 'Questionnaire cleared — the ticket will open immediately on button click.')],
             ephemeral: true,
           });
         }
+      };
 
-        addButton(interaction.guild.id, Number(panelId), name, emoji, desc, categoryId, supportRoles);
-
-        return interaction.reply({
-          embeds: [ok(
-            'Button Added',
-            `Button **${emoji ? emoji + ' ' : ''}${name}** has been added.\n` +
-            (supportRoles.length ? `Support roles: ${supportRoles.map(r => `<@&${r}>`).join(', ')}\n` : '') +
-            `Use \`/config ticket\` to add a questionnaire, or \`/send panel\` to deploy the panel.`
-          )],
-          ephemeral: true,
-        });
-      }
-
-      // /config questionnaire modal — customId: config_q|buttonId
-      if (type === 'config_q') {
-        const buttonId = Number(interaction.customId.split('|')[1]);
-        const fields   = [];
-        for (let i = 1; i <= 5; i++) {
-          const label = interaction.fields.getTextInputValue(`f${i}`).trim();
-          if (label) fields.push({ id: `field_${i}`, label, required: true });
-        }
-        setQuestionnaire(interaction.guild.id, buttonId, fields);
-        return interaction.reply({
-          embeds: [ok('Questionnaire Set', fields.length
-            ? `**${fields.length}** field(s) configured:\n${fields.map(f => `• ${f.label}`).join('\n')}`
-            : 'Questionnaire cleared — the ticket will open immediately on button click.')],
-          ephemeral: true,
-        });
+      try { await runModal(); }
+      catch (e) {
+        console.error(`[ERR] modal ${interaction.customId}:`, e);
+        try {
+          const payload = { embeds: [err('Error', 'Something went wrong. Please try again.')], ephemeral: true };
+          if (interaction.replied || interaction.deferred) await interaction.followUp(payload);
+          else await interaction.reply(payload);
+        } catch {}
       }
 
       return;

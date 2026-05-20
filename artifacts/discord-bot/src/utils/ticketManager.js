@@ -228,14 +228,22 @@ export async function handleTicketClose(interaction, channelOverride) {
   for (const [userId, count] of Object.entries(msgs)) {
     if (userId !== ticket.userId) staffMsgs[userId] = count;
   }
+  // Always credit the closer if they are not the ticket owner (even with 0 messages)
+  if (interaction.user.id !== ticket.userId && !staffMsgs[interaction.user.id]) {
+    staffMsgs[interaction.user.id] = 0;
+  }
   const handledBy = ticket.claimedBy ??
     (Object.entries(staffMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
   if (Object.keys(staffMsgs).length) creditAllStaff(ticket.guildId, staffMsgs, handledBy);
 
-  // Send transcript and get the message URL
-  const transcriptUrl = await sendTranscriptDirect(interaction.guild, ticket, interaction.channel);
-
+  // Mark ticket closed BEFORE any async operations so it can never be double-credited
   closeTicket(channelId);
+
+  // Send transcript — failure is non-fatal
+  const transcriptUrl = await sendTranscriptDirect(interaction.guild, ticket, interaction.channel).catch(e => {
+    console.error('[CLOSE] transcript error:', e);
+    return null;
+  });
 
   const closeEmbed = new EmbedBuilder()
     .setColor(0xED4245)
@@ -387,12 +395,21 @@ export async function handleTicketAlert(interaction) {
     for (const [uid, count] of Object.entries(cMsgs)) {
       if (uid !== t.userId) sMsgs[uid] = count;
     }
+    // Credit the staff member who set the alert (they initiated close) if not already credited
+    const alertStaffId = alertTimers.get(channelId)?.staffId;
+    if (alertStaffId && alertStaffId !== t.userId && !sMsgs[alertStaffId]) {
+      sMsgs[alertStaffId] = 0;
+    }
     const handledBy = t.claimedBy ?? (Object.entries(sMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
     if (Object.keys(sMsgs).length) creditAllStaff(t.guildId, sMsgs, handledBy);
 
+    // Mark closed BEFORE async operations — prevents double-credit on retry
+    closeTicket(channelId);
+    alertTimers.delete(channelId);
+
     const ch = interaction.guild.channels.cache.get(channelId);
     if (ch) {
-      await sendTranscriptDirect(interaction.guild, t, ch);
+      await sendTranscriptDirect(interaction.guild, t, ch).catch(e => console.error('[ALERT-CLOSE] transcript error:', e));
       await ch.send({
         embeds: [
           new EmbedBuilder()
@@ -404,9 +421,6 @@ export async function handleTicketAlert(interaction) {
       }).catch(() => {});
       setTimeout(() => ch.delete().catch(() => {}), 5000);
     }
-
-    closeTicket(channelId);
-    alertTimers.delete(channelId);
   }, 24 * 60 * 60 * 1000);
 
   alertTimers.set(channelId, { timeout, alertMsgId: alertMsg.id, staffId: interaction.user.id });
