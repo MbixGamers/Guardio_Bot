@@ -15,8 +15,11 @@ export default {
       try { await cmd.execute(interaction, client); }
       catch (e) {
         console.error(`[ERR] /${interaction.commandName}:`, e);
-        const payload = { embeds: [err('Error', 'Something went wrong. Please try again.')], ephemeral: true };
-        interaction.replied || interaction.deferred ? interaction.followUp(payload) : interaction.reply(payload);
+        try {
+          const payload = { embeds: [err('Error', 'Something went wrong. Please try again.')], ephemeral: true };
+          if (interaction.replied || interaction.deferred) await interaction.followUp(payload);
+          else await interaction.reply(payload);
+        } catch {}
       }
       return;
     }

@@ -7,35 +7,36 @@
   "panels": {
     "1456279983407370426": [
       {
-        "id": 1,
+        "id": 10,
         "number": 1,
-        "title": "Void Ticket",
-        "description": "demo testing"
+        "title": "Void Tickets",
+        "description": "Join VOID now!"
       }
     ]
   },
   "buttons": {
     "1456279983407370426": [
       {
-        "id": 2,
-        "panelId": 1,
-        "name": "Open",
-        "emoji": "📩",
-        "description": "support tickets",
+        "id": 11,
+        "panelId": 10,
+        "name": "Roster",
+        "emoji": "😎",
+        "description": "Join our VOID Roster today!",
         "categoryId": "1506376114644320387",
         "supportRoles": [
-          "1458039422842048594"
+          "1457820722562072818",
+          "1462124606893850634"
         ]
       },
       {
-        "id": 4,
-        "panelId": 1,
-        "name": "Support",
-        "emoji": "🤨",
-        "description": "open",
-        "categoryId": "1506376114644320387",
+        "id": 12,
+        "panelId": 10,
+        "name": "Staff",
+        "emoji": "💼",
+        "description": "Join our elite staff team now!",
+        "categoryId": "1456279984602878054",
         "supportRoles": [
-          "1458039422842048594 1458184001780187247"
+          "1458184001780187247"
         ]
       }
     ]
@@ -62,6 +63,30 @@
       {
         "id": "field_2",
         "label": "Link in your resume.",
+        "required": true
+      }
+    ],
+    "1456279983407370426:11": [
+      {
+        "id": "field_1",
+        "label": "What is your age?",
+        "required": true
+      },
+      {
+        "id": "field_2",
+        "label": "Which position do you want to join VOID as?",
+        "required": true
+      }
+    ],
+    "1456279983407370426:12": [
+      {
+        "id": "field_1",
+        "label": "What is your age?",
+        "required": true
+      },
+      {
+        "id": "field_2",
+        "label": "State your previous experience. / Link resume",
         "required": true
       }
     ]
@@ -106,6 +131,28 @@
       "claimedBy": "928635423465537579",
       "headerMsgId": "1506537133995982869",
       "status": "closed"
+    },
+    "1506540965219926046": {
+      "id": "13",
+      "channelId": "1506540965219926046",
+      "guildId": "1456279983407370426",
+      "userId": "928635423465537579",
+      "buttonName": "Roster",
+      "number": 3,
+      "claimedBy": "928635423465537579",
+      "headerMsgId": "1506540967702958132",
+      "status": "closed"
+    },
+    "1506543076800467005": {
+      "id": "14",
+      "channelId": "1506543076800467005",
+      "guildId": "1456279983407370426",
+      "userId": "928635423465537579",
+      "buttonName": "Roster",
+      "number": 4,
+      "claimedBy": "928635423465537579",
+      "headerMsgId": "1506543085289738262",
+      "status": "closed"
     }
   },
   "ticketMsgs": {
@@ -116,6 +163,12 @@
     },
     "7": {
       "928635423465537579": 3
+    },
+    "13": {
+      "928635423465537579": 10
+    },
+    "14": {
+      "928635423465537579": 6
     }
   },
   "staff": {
@@ -132,7 +185,7 @@
   },
   "nukeLog": {},
   "ticketNumbers": {
-    "1456279983407370426": 3
+    "1456279983407370426": 5
   },
   "transcriptChannels": {
     "1456279983407370426": "1506532949066252348"
@@ -140,7 +193,7 @@
   "loa": {
     "1456279983407370426": {
       "channelId": "1506537821257728063",
-      "roleId": "1468899322715443374",
+      "roleId": "1457820774525046834",
       "requests": {
         "8": {
           "id": "8",
@@ -149,9 +202,25 @@
           "duration": "1 day",
           "status": "approved",
           "msgId": "1506538016045404272"
+        },
+        "9": {
+          "id": "9",
+          "userId": "928635423465537579",
+          "reason": "demo",
+          "duration": "1 day",
+          "status": "approved",
+          "msgId": "1506538949017993218"
+        },
+        "15": {
+          "id": "15",
+          "userId": "928635423465537579",
+          "reason": "demo",
+          "duration": "1 day",
+          "status": "approved",
+          "msgId": "1506543334242390016"
         }
       }
     }
   },
-  "_nextId": 9
+  "_nextId": 16
 }
