@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
-import { getStaff, resetStaff } from '../../store.js';
+import { getStaff, resetStaff, getAllSupportRoles } from '../../store.js';
 import { err, info } from '../../utils/embeds.js';
+import { isAdmin, isSupportRole } from '../../utils/permissions.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -14,6 +15,9 @@ export default {
     const g   = interaction.guild.id;
 
     if (sub === 'checks') {
+      if (!isAdmin(interaction.member) && !isSupportRole(interaction.member, getAllSupportRoles(g))) {
+        return interaction.reply({ embeds: [err('Permission Denied', 'Only staff members can view the leaderboard.')], ephemeral: true });
+      }
       const staff = getStaff(g);
       const rows  = Object.entries(staff)
         .sort((a, b) => b[1].credits - a[1].credits)

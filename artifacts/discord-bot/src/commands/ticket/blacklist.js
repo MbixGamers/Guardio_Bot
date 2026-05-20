@@ -1,12 +1,12 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { blacklistAdd, blacklistRemove, getBlacklist } from '../../store.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { blacklistAdd, blacklistRemove, getBlacklist, getAllSupportRoles } from '../../store.js';
 import { ok, err, info } from '../../utils/embeds.js';
+import { isAdmin, isSupportRole } from '../../utils/permissions.js';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('blacklist')
     .setDescription('Manage the ticket blacklist')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand(s =>
       s.setName('add').setDescription('Prevent a user from opening tickets')
         .addUserOption(o => o.setName('user').setDescription('User to blacklist').setRequired(true))
@@ -20,11 +20,14 @@ export default {
     ),
 
   async execute(interaction) {
-    const sub  = interaction.options.getSubcommand();
-    const g    = interaction.guild.id;
+    const sub = interaction.options.getSubcommand();
+    const g   = interaction.guild.id;
 
     if (sub === 'add') {
-      const user = interaction.options.getUser('user');
+      if (!isAdmin(interaction.member) && !isSupportRole(interaction.member, getAllSupportRoles(g))) {
+        return interaction.reply({ embeds: [err('Permission Denied', 'Only staff members can blacklist users.')], ephemeral: true });
+      }
+      const user  = interaction.options.getUser('user');
       const added = blacklistAdd(g, user.id);
       return interaction.reply({
         embeds: [added
@@ -35,7 +38,10 @@ export default {
     }
 
     if (sub === 'remove') {
-      const user = interaction.options.getUser('user');
+      if (!isAdmin(interaction.member) && !isSupportRole(interaction.member, getAllSupportRoles(g))) {
+        return interaction.reply({ embeds: [err('Permission Denied', 'Only staff members can remove users from the blacklist.')], ephemeral: true });
+      }
+      const user    = interaction.options.getUser('user');
       const removed = blacklistRemove(g, user.id);
       return interaction.reply({
         embeds: [removed

@@ -7,6 +7,7 @@ import {
   createLoaRequest, setLoaRequestMsgId, getAllSupportRoles
 } from '../../store.js';
 import { err, ok, info } from '../../utils/embeds.js';
+import { isAdmin, isSupportRole } from '../../utils/permissions.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -62,6 +63,9 @@ export default {
 
     // ── /loa apply ────────────────────────────────────────────────────────────
     if (sub === 'apply') {
+      if (!isAdmin(interaction.member) && !isSupportRole(interaction.member, getAllSupportRoles(g))) {
+        return interaction.reply({ embeds: [err('Permission Denied', 'Only staff members can submit a Leave of Absence request.')], ephemeral: true });
+      }
       const logChannelId = getLoaChannel(g);
       if (!logChannelId) {
         return interaction.reply({
