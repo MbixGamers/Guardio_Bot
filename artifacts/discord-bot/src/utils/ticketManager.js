@@ -5,7 +5,8 @@ import {
 import {
   getButton, getQuestionnaire, getOpenTicket, createTicket, closeTicket, claimTicket,
   recordMessage, getTicketMsgs, getTicketByChannel, creditAllStaff, isBlacklisted,
-  getNextTicketNumber, setTicketHeaderMsg, getTranscriptChannel, incrementStaffMessages
+  getNextTicketNumber, setTicketHeaderMsg, getTranscriptChannel, incrementStaffMessages,
+  touchStaffEntry
 } from '../store.js';
 import { ok, err, info, warn } from './embeds.js';
 import { isAdmin, isSupportRole } from './permissions.js';
@@ -232,8 +233,8 @@ export async function handleTicketClose(interaction, channelOverride) {
   if (interaction.user.id !== ticket.userId && !staffMsgs[interaction.user.id]) {
     staffMsgs[interaction.user.id] = 0;
   }
-  // Always credit the claimer if they are not the ticket owner (even with 0 messages)
-  if (ticket.claimedBy && ticket.claimedBy !== ticket.userId && !staffMsgs[ticket.claimedBy]) {
+  // Always credit the claimer (even if they opened the ticket themselves)
+  if (ticket.claimedBy && !staffMsgs[ticket.claimedBy]) {
     staffMsgs[ticket.claimedBy] = 0;
   }
   const handledBy = ticket.claimedBy ??
@@ -295,6 +296,8 @@ export async function handleTicketClaim(interaction) {
   }
 
   claimTicket(channelId, interaction.user.id);
+  // Register claimer immediately so they appear in /mod checks right away
+  touchStaffEntry(ticket.guildId, interaction.user.id);
 
   // Edit header embed + update buttons to show claimed state
   if (ticket.headerMsgId) {
@@ -406,8 +409,8 @@ export async function handleTicketAlert(interaction) {
     if (alertStaffId && alertStaffId !== t.userId && !sMsgs[alertStaffId]) {
       sMsgs[alertStaffId] = 0;
     }
-    // Always credit the claimer if not already credited
-    if (t.claimedBy && t.claimedBy !== t.userId && !sMsgs[t.claimedBy]) {
+    // Always credit the claimer (even if they opened the ticket themselves)
+    if (t.claimedBy && !sMsgs[t.claimedBy]) {
       sMsgs[t.claimedBy] = 0;
     }
     const handledBy = t.claimedBy ?? (Object.entries(sMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);

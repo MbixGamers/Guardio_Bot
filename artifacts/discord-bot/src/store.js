@@ -196,6 +196,15 @@ export function getStaff(guildId) {
   return store.staff[guildId] ?? {};
 }
 
+// Ensure a staff entry exists (called on claim so the user appears in /mod checks immediately)
+export function touchStaffEntry(guildId, userId) {
+  if (!store.staff[guildId]) store.staff[guildId] = {};
+  if (!store.staff[guildId][userId]) {
+    store.staff[guildId][userId] = { credits: 0, handled: 0, messages: 0 };
+    save();
+  }
+}
+
 // Live message increment — called every time a staff member sends in a ticket
 export function incrementStaffMessages(guildId, userId) {
   if (!store.staff[guildId]) store.staff[guildId] = {};
