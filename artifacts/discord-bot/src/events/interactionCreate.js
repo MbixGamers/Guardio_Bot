@@ -1,4 +1,4 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } from 'discord.js';
 import { handleTicketButton, handleTicketModal, handleTicketClose, handleTicketClaim } from '../utils/ticketManager.js';
 import { getButton, addButton, setQuestionnaire, getLoaRequest, updateLoaRequest, getLoaRole, getAllSupportRoles } from '../store.js';
 import { getPendingButton, clearPendingButton } from '../commands/ticket/addbutton.js';
@@ -141,19 +141,21 @@ export default {
 // ── LOA approve / deny handler ────────────────────────────────────────────────
 
 async function handleLoaDecision(interaction, type, guildId, requestId) {
-  if (!interaction.member.permissions.has(0x8n)) { // Administrator
-    return interaction.reply({ embeds: [err('Permission Denied', 'Only administrators can approve or deny LOA requests.')], ephemeral: true });
+  // Defer immediately — role changes + DMs can take longer than Discord's 3s window
+  await interaction.deferReply({ ephemeral: true });
+
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.editReply({ embeds: [err('Permission Denied', 'Only administrators can approve or deny LOA requests.')] });
   }
 
   const request = getLoaRequest(guildId, requestId);
   if (!request) {
-    return interaction.reply({ embeds: [err('Not Found', 'This LOA request could not be found.')], ephemeral: true });
+    return interaction.editReply({ embeds: [err('Not Found', 'This LOA request could not be found.')] });
   }
 
   if (request.status !== 'pending') {
-    return interaction.reply({
+    return interaction.editReply({
       embeds: [err('Already Decided', `This request was already **${request.status}**.`)],
-      ephemeral: true,
     });
   }
 
@@ -244,7 +246,7 @@ async function handleLoaDecision(interaction, type, guildId, requestId) {
     } catch {}
   }
 
-  await interaction.reply({
+  await interaction.editReply({
     embeds: [
       new EmbedBuilder()
         .setColor(approved ? 0x57F287 : 0xED4245)
@@ -256,6 +258,5 @@ async function handleLoaDecision(interaction, type, guildId, requestId) {
         )
         .setTimestamp(),
     ],
-    ephemeral: true,
   });
 }
