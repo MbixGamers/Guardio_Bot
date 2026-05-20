@@ -197,21 +197,71 @@ export async function checkNewAccount(message, settings) {
   ));
 }
 
-// ── NSFW keyword detection (non-NSFW channels only) → delete + log ────────────
+// ── NSFW / hate-speech / slur detection (non-NSFW channels) → delete + log ───
 
-const NSFW_PATTERNS = [
-  /\bnsfw\b/i,
+const BLOCKED_PATTERNS = [
+  // ── Adult / NSFW sites ──────────────────────────────────────────────────────
   /\bporn(hub)?\b/i,
+  /pornhub\.com/i,
   /\bxxx\b/i,
-  /\bonlyfans\b/i,
   /\bxvideos\b/i,
   /\bxhamster\b/i,
   /\bredtube\b/i,
-  /\bpornhub\.com\b/i,
   /\bxnxx\b/i,
+  /\bonlyfans\b/i,
+  /onlyfans\.com/i,
   /\bsexting\b/i,
   /\bgore\b/i,
   /\bcp\b.*\blink\b/i,
+  /\bloli(con)?\b/i,
+  /\bhentai\b/i,
+  /\blivejasmin\b/i,
+  /chaturbate\.com/i,
+  /\bcamwhore\b/i,
+  /\bnudes?\b/i,
+  /\bsextape\b/i,
+
+  // ── Racial slurs ────────────────────────────────────────────────────────────
+  /\bn[i!1]gg[aer]+\b/i,
+  /\bn[i!1]g\b/i,
+  /\bc[o0]on\b/i,
+  /\bsp[i!1]c+\b/i,
+  /\bch[i!1]nk\b/i,
+  /\bgook\b/i,
+  /\bwetback\b/i,
+  /\bbeaner\b/i,
+  /\bkr[a@]cker\b/i,
+  /\bk[i!1]ke\b/i,
+  /\bwh[o0]re\b/i,
+  /\bjew[- ]?b[a@]g\b/i,
+  /\bazz?[-\s]?wipe\b/i,
+  /\bsandnigger\b/i,
+  /\btowelhead\b/i,
+  /\braghead\b/i,
+  /\bporch\s?monkey\b/i,
+  /\bjigab[o0]{2}\b/i,
+
+  // ── Homophobic / transphobic slurs ──────────────────────────────────────────
+  /\bf[a@]gg?[o0]t\b/i,
+  /\bf[a@]g\b/i,
+  /\bdyke\b/i,
+  /\btr[a@]nn(y|ies)\b/i,
+  /\bsh[e3]male\b/i,
+  /\bhe[-\s]?she\b/i,
+  /\bpoofter\b/i,
+  /\bqueer\b/i,
+
+  // ── General hate / violent threats ──────────────────────────────────────────
+  /\bkys\b/i,
+  /\bkill\s+your\s*self\b/i,
+  /\bkill\s+(ur|yourself)\b/i,
+  /\bgo\s+kill\s+yourself\b/i,
+  /\bslit\s+(your|ur|wrists)\b/i,
+  /\bhang\s+yourself\b/i,
+  /\bre\s?tard\b/i,
+  /\bret[a@]rded\b/i,
+  /\bspe[a@]z\b/i,
+  /\bm[o0]ngol(oid)?\b/i,
 ];
 
 export async function checkNsfw(message, settings) {
@@ -221,16 +271,16 @@ export async function checkNsfw(message, settings) {
   // Only check in channels that are NOT marked NSFW
   if (message.channel.nsfw) return;
 
-  const content = message.content.toLowerCase();
-  const matched = NSFW_PATTERNS.find(p => p.test(content));
+  const content = message.content;
+  const matched = BLOCKED_PATTERNS.find(p => p.test(content));
   if (!matched) return;
 
   await tryDelete(message);
 
   await sendSecurityLog(message.guild, logChannelId, secEmbed(
     0xED4245,
-    'NSFW Content Blocked',
-    `${message.author} sent potentially NSFW content in a non-NSFW channel. Message deleted.`,
+    'Blocked Content Detected — Message Deleted',
+    `${message.author} sent blocked content (NSFW, slur, or hate speech). Message deleted.`,
     [
       { name: 'User',    value: `${message.author.tag}\n${message.author.id}`, inline: true },
       { name: 'Channel', value: `<#${message.channel.id}>`,                   inline: true },
