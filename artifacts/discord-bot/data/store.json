@@ -1,12 +1,105 @@
 {
   "security": {},
-  "panels": {},
-  "buttons": {},
-  "questionnaires": {},
-  "tickets": {},
-  "ticketMsgs": {},
-  "staff": {},
-  "blacklist": {},
+  "panels": {
+    "1456279983407370426": [
+      {
+        "id": 1,
+        "number": 1,
+        "title": "Void Ticket",
+        "description": "demo testing"
+      }
+    ]
+  },
+  "buttons": {
+    "1456279983407370426": [
+      {
+        "id": 2,
+        "panelId": 1,
+        "name": "Open",
+        "emoji": "📩",
+        "description": "support tickets",
+        "categoryId": "1506376114644320387",
+        "supportRoles": [
+          "1458039422842048594"
+        ]
+      },
+      {
+        "id": 4,
+        "panelId": 1,
+        "name": "Support",
+        "emoji": "🤨",
+        "description": "open",
+        "categoryId": "1506376114644320387",
+        "supportRoles": [
+          "1458039422842048594 1458184001780187247"
+        ]
+      }
+    ]
+  },
+  "questionnaires": {
+    "1456279983407370426:2": [
+      {
+        "id": "field_1",
+        "label": "Age",
+        "required": true
+      },
+      {
+        "id": "field_2",
+        "label": "Which position are you applying for?",
+        "required": true
+      }
+    ],
+    "1456279983407370426:4": [
+      {
+        "id": "field_1",
+        "label": "Please state your age",
+        "required": true
+      },
+      {
+        "id": "field_2",
+        "label": "Link in your resume.",
+        "required": true
+      }
+    ]
+  },
+  "tickets": {
+    "1506377895650529300": {
+      "id": "3",
+      "channelId": "1506377895650529300",
+      "guildId": "1456279983407370426",
+      "userId": "928635423465537579",
+      "buttonName": "Open",
+      "claimedBy": "928635423465537579",
+      "status": "closed"
+    },
+    "1506379558432280746": {
+      "id": "5",
+      "channelId": "1506379558432280746",
+      "guildId": "1456279983407370426",
+      "userId": "928635423465537579",
+      "buttonName": "Open",
+      "claimedBy": "928635423465537579",
+      "status": "closed"
+    }
+  },
+  "ticketMsgs": {
+    "3": {},
+    "5": {}
+  },
+  "staff": {
+    "1456279983407370426": {
+      "928635423465537579": {
+        "credits": 2,
+        "handled": 2,
+        "messages": 0
+      }
+    }
+  },
+  "blacklist": {
+    "1456279983407370426": [
+      "1351918322869993563"
+    ]
+  },
   "nukeLog": {},
-  "_nextId": 1
+  "_nextId": 6
 }
