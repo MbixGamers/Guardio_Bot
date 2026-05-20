@@ -18,6 +18,7 @@ const defaults = {
   nukeLog: {},            // guildId -> { userId: [unixSec] }
   ticketNumbers: {},      // guildId -> nextNumber
   transcriptChannels: {}, // guildId -> channelId
+  loa: {},                // guildId -> { channelId, roleId, requests: { requestId -> { userId, reason, duration, status, msgId } } }
   _nextId: 1,
 };
 
@@ -101,6 +102,15 @@ export function addButton(guildId, panelId, name, emoji, description, categoryId
   return btn;
 }
 
+// Returns all unique support role IDs across every button in the guild
+export function getAllSupportRoles(guildId) {
+  const roles = new Set();
+  for (const btn of getButtons(guildId)) {
+    for (const r of (btn.supportRoles ?? [])) roles.add(r);
+  }
+  return [...roles];
+}
+
 // ── Questionnaires ───────────────────────────────────────────────────────────
 
 export function getQuestionnaire(guildId, buttonId) {
@@ -123,7 +133,6 @@ export function getTicketByChannel(channelId) {
   return store.tickets[channelId] ?? null;
 }
 
-// Returns any open ticket for this user in this guild (across all button types)
 export function getOpenTicket(guildId, userId) {
   return Object.values(store.tickets).find(
     t => t.guildId === guildId && t.userId === userId && t.status === 'open'
@@ -171,7 +180,6 @@ export function closeTicket(channelId) {
 
 // ── Ticket messages ──────────────────────────────────────────────────────────
 
-// Records a message for ANY user (staff or owner) — filtering is done by callers
 export function recordMessage(ticketId, userId) {
   if (!store.ticketMsgs[ticketId]) store.ticketMsgs[ticketId] = {};
   store.ticketMsgs[ticketId][userId] = (store.ticketMsgs[ticketId][userId] ?? 0) + 1;
@@ -188,15 +196,23 @@ export function getStaff(guildId) {
   return store.staff[guildId] ?? {};
 }
 
-// Credits every staff member who participated; userMsgMap = { userId: msgCount }
+// Live message increment — called every time a staff member sends in a ticket
+export function incrementStaffMessages(guildId, userId) {
+  if (!store.staff[guildId]) store.staff[guildId] = {};
+  const s = store.staff[guildId][userId] ?? { credits: 0, handled: 0, messages: 0 };
+  store.staff[guildId][userId] = { ...s, messages: s.messages + 1 };
+  save();
+}
+
+// Credits every staff member who participated when a ticket closes
 export function creditAllStaff(guildId, userMsgMap, handledUserId) {
   if (!store.staff[guildId]) store.staff[guildId] = {};
-  for (const [userId, msgCount] of Object.entries(userMsgMap)) {
+  for (const [userId] of Object.entries(userMsgMap)) {
     const s = store.staff[guildId][userId] ?? { credits: 0, handled: 0, messages: 0 };
     store.staff[guildId][userId] = {
-      credits:  s.credits  + 1,
-      handled:  s.handled  + (userId === handledUserId ? 1 : 0),
-      messages: s.messages + msgCount,
+      credits: s.credits + 1,
+      handled: s.handled + (userId === handledUserId ? 1 : 0),
+      messages: s.messages,
     };
   }
   save();
@@ -217,6 +233,53 @@ export function setTranscriptChannel(guildId, channelId) {
 
 export function getTranscriptChannel(guildId) {
   return store.transcriptChannels?.[guildId] ?? null;
+}
+
+// ── LOA ───────────────────────────────────────────────────────────────────────
+
+function loaStore(guildId) {
+  if (!store.loa) store.loa = {};
+  if (!store.loa[guildId]) store.loa[guildId] = { channelId: null, roleId: null, requests: {} };
+  return store.loa[guildId];
+}
+
+export function setLoaChannel(guildId, channelId) {
+  loaStore(guildId).channelId = channelId;
+  save();
+}
+
+export function getLoaChannel(guildId) {
+  return loaStore(guildId).channelId;
+}
+
+export function setLoaRole(guildId, roleId) {
+  loaStore(guildId).roleId = roleId;
+  save();
+}
+
+export function getLoaRole(guildId) {
+  return loaStore(guildId).roleId;
+}
+
+export function createLoaRequest(guildId, userId, reason, duration) {
+  const id = String(nextId());
+  loaStore(guildId).requests[id] = { id, userId, reason, duration, status: 'pending', msgId: null };
+  save();
+  return loaStore(guildId).requests[id];
+}
+
+export function getLoaRequest(guildId, requestId) {
+  return loaStore(guildId).requests[requestId] ?? null;
+}
+
+export function setLoaRequestMsgId(guildId, requestId, msgId) {
+  const r = loaStore(guildId).requests[requestId];
+  if (r) { r.msgId = msgId; save(); }
+}
+
+export function updateLoaRequest(guildId, requestId, status) {
+  const r = loaStore(guildId).requests[requestId];
+  if (r) { r.status = status; save(); }
 }
 
 // ── Blacklist ────────────────────────────────────────────────────────────────

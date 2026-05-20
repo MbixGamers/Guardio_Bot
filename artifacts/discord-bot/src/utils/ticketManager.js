@@ -1,11 +1,11 @@
 import {
   ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder
+  ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder, AttachmentBuilder
 } from 'discord.js';
 import {
   getButton, getQuestionnaire, getOpenTicket, createTicket, closeTicket, claimTicket,
   recordMessage, getTicketMsgs, getTicketByChannel, creditAllStaff, isBlacklisted,
-  getNextTicketNumber, setTicketHeaderMsg, getTranscriptChannel
+  getNextTicketNumber, setTicketHeaderMsg, getTranscriptChannel, incrementStaffMessages
 } from '../store.js';
 import { ok, err, info, warn } from './embeds.js';
 import { isAdmin, isSupportRole } from './permissions.js';
@@ -19,8 +19,30 @@ function slugify(str) {
   return str.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'user';
 }
 
-function pad(n, digits = 4) {
+export function pad(n, digits = 4) {
   return String(n).padStart(digits, '0');
+}
+
+function controlRow(channelId, claimed = false, claimedBy = null) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket_close|${channelId}`)
+      .setLabel('Close Ticket')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('🔒'),
+    claimed
+      ? new ButtonBuilder()
+          .setCustomId(`ticket_claim|${channelId}`)
+          .setLabel(claimedBy ? `Claimed by ${claimedBy}` : 'Claimed')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('✅')
+          .setDisabled(true)
+      : new ButtonBuilder()
+          .setCustomId(`ticket_claim|${channelId}`)
+          .setLabel('Claim Ticket')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('🙋'),
+  );
 }
 
 // ── Open ticket ───────────────────────────────────────────────────────────────
@@ -83,7 +105,6 @@ async function openTicket(interaction, buttonName, responses) {
     return interaction.replied || interaction.deferred ? interaction.editReply(r) : interaction.reply(r);
   }
 
-  // One open ticket per user (across all categories)
   const existing = getOpenTicket(g, interaction.user.id);
   if (existing) {
     const ch = await interaction.guild.channels.fetch(existing.channelId).catch(() => null);
@@ -93,14 +114,17 @@ async function openTicket(interaction, buttonName, responses) {
           new EmbedBuilder()
             .setColor(0xFEE75C)
             .setTitle('You Already Have an Open Ticket')
-            .setDescription(`You can only have **one open ticket** at a time.\n\nYour current ticket: <#${existing.channelId}>\n\nPlease resolve your existing ticket before opening a new one.`)
+            .setDescription(
+              `You can only have **one open ticket** at a time.\n\n` +
+              `Your current ticket: <#${existing.channelId}>\n\n` +
+              `Please resolve your existing ticket before opening a new one.`
+            )
             .setTimestamp(),
         ],
         ephemeral: true,
       };
       return interaction.replied || interaction.deferred ? interaction.editReply(r) : interaction.reply(r);
     }
-    // Channel was deleted — clean up
     closeTicket(existing.channelId);
   }
 
@@ -110,13 +134,10 @@ async function openTicket(interaction, buttonName, responses) {
     ephemeral: true,
   });
 
-  const button = getButton(g, buttonName);
+  const button      = getButton(g, buttonName);
   const supportRoles = Array.isArray(button.supportRoles) ? button.supportRoles : [];
-
   const ticketNumber = getNextTicketNumber(g);
-  const categorySlug = slugify(buttonName);
-  const userSlug     = slugify(interaction.user.username);
-  const channelName  = `${categorySlug}-${userSlug}-${pad(ticketNumber)}`;
+  const channelName  = `${slugify(buttonName)}-${slugify(interaction.user.username)}-${pad(ticketNumber)}`;
 
   const perms = [
     { id: g, deny: [PermissionFlagsBits.ViewChannel] },
@@ -138,44 +159,32 @@ async function openTicket(interaction, buttonName, responses) {
     reason: `Ticket #${ticketNumber} opened by ${interaction.user.tag}`,
   });
 
-  const ticket = createTicket(channel.id, g, interaction.user.id, buttonName, ticketNumber);
-
+  const ticket    = createTicket(channel.id, g, interaction.user.id, buttonName, ticketNumber);
   const avatarURL = interaction.user.displayAvatarURL({ size: 256, extension: 'png' });
 
   const headerEmbed = new EmbedBuilder()
     .setColor(0x5865F2)
-    .setAuthor({ name: `${interaction.user.tag}`, iconURL: avatarURL })
+    .setAuthor({ name: interaction.user.tag, iconURL: avatarURL })
     .setTitle(`Ticket #${pad(ticketNumber)} — ${buttonName}`)
     .setDescription(
-      `Welcome, ${interaction.user}! A member of our support team will be with you shortly.\n` +
-      (button.description ? `\n${button.description}` : '')
+      `Welcome, ${interaction.user}! A member of our support team will be with you shortly.` +
+      (button.description ? `\n\n${button.description}` : '')
     )
     .addFields(
-      { name: 'Opened By',  value: `${interaction.user}`, inline: true },
-      { name: 'Category',   value: buttonName,            inline: true },
-      { name: 'Status',     value: 'Open',                inline: true },
+      { name: 'Opened By', value: `${interaction.user}`, inline: true },
+      { name: 'Category',  value: buttonName,            inline: true },
+      { name: 'Status',    value: 'Open',                inline: true },
       ...responses,
     )
     .setThumbnail(avatarURL)
     .setFooter({ text: `Ticket #${pad(ticketNumber)}` })
     .setTimestamp();
 
-  const controls = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ticket_close|${channel.id}`)
-      .setLabel('Close Ticket')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId(`ticket_claim|${channel.id}`)
-      .setLabel('Claim Ticket')
-      .setStyle(ButtonStyle.Secondary),
-  );
-
   const roleMentions = supportRoles.map(r => `<@&${r}>`).join(' ');
   const headerMsg = await channel.send({
     content: `${interaction.user}${roleMentions ? ' ' + roleMentions : ''}`,
     embeds: [headerEmbed],
-    components: [controls],
+    components: [controlRow(channel.id)],
   });
 
   setTicketHeaderMsg(channel.id, headerMsg.id);
@@ -189,7 +198,7 @@ async function openTicket(interaction, buttonName, responses) {
 
 export async function handleTicketClose(interaction, channelOverride) {
   const channelId = channelOverride ?? interaction.customId?.split('|')[1] ?? interaction.channel.id;
-  const ticket = getTicketByChannel(channelId);
+  const ticket    = getTicketByChannel(channelId);
 
   if (!ticket || ticket.status === 'closed') {
     return interaction.reply({ embeds: [err('Not a Ticket', 'This channel is not an active ticket.')], ephemeral: true });
@@ -207,16 +216,6 @@ export async function handleTicketClose(interaction, channelOverride) {
     return interaction.reply({ embeds: [err('Permission Denied', 'Only the ticket owner or support staff can close this ticket.')], ephemeral: true });
   }
 
-  await interaction.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0xED4245)
-        .setTitle('Ticket Closed')
-        .setDescription(`This ticket was closed by ${interaction.user}.\nThe channel will be deleted in **5 seconds**.`)
-        .setTimestamp(),
-    ],
-  });
-
   // Cancel any active alert timer
   if (alertTimers.has(channelId)) {
     clearTimeout(alertTimers.get(channelId).timeout);
@@ -231,15 +230,30 @@ export async function handleTicketClose(interaction, channelOverride) {
   }
   const handledBy = ticket.claimedBy ??
     (Object.entries(staffMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
+  if (Object.keys(staffMsgs).length) creditAllStaff(ticket.guildId, staffMsgs, handledBy);
 
-  if (Object.keys(staffMsgs).length) {
-    creditAllStaff(ticket.guildId, staffMsgs, handledBy);
-  }
-
-  // Send transcript before deleting
-  await sendTranscript(interaction, ticket, interaction.channel);
+  // Send transcript and get the message URL
+  const transcriptUrl = await sendTranscriptDirect(interaction.guild, ticket, interaction.channel);
 
   closeTicket(channelId);
+
+  const closeEmbed = new EmbedBuilder()
+    .setColor(0xED4245)
+    .setTitle('Ticket Closed')
+    .setDescription(
+      `This ticket was closed by ${interaction.user}.\n` +
+      `The channel will be deleted in **5 seconds**.` +
+      (transcriptUrl ? `\n\nA transcript has been saved.` : '')
+    )
+    .setTimestamp();
+
+  const components = transcriptUrl
+    ? [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel('View Transcript').setStyle(ButtonStyle.Link).setURL(transcriptUrl).setEmoji('📄')
+      )]
+    : [];
+
+  await interaction.reply({ embeds: [closeEmbed], components });
 
   setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
 }
@@ -270,20 +284,24 @@ export async function handleTicketClaim(interaction) {
 
   claimTicket(channelId, interaction.user.id);
 
-  // Edit the header embed to reflect claimed status
+  // Edit header embed + update buttons to show claimed state
   if (ticket.headerMsgId) {
     try {
       const headerMsg = await interaction.channel.messages.fetch(ticket.headerMsgId);
       const oldEmbed  = headerMsg.embeds[0];
       if (oldEmbed) {
-        const updated = EmbedBuilder.from(oldEmbed)
+        const statusIdx = oldEmbed.fields.findIndex(f => f.name === 'Status');
+        const updated   = EmbedBuilder.from(oldEmbed)
           .setColor(0x57F287)
           .spliceFields(
-            oldEmbed.fields.findIndex(f => f.name === 'Status'),
-            1,
+            statusIdx >= 0 ? statusIdx : oldEmbed.fields.length,
+            statusIdx >= 0 ? 1 : 0,
             { name: 'Status', value: `Claimed by ${interaction.user}`, inline: true }
           );
-        await headerMsg.edit({ embeds: [updated] });
+        await headerMsg.edit({
+          embeds: [updated],
+          components: [controlRow(channelId, true, interaction.user.username)],
+        });
       }
     } catch {}
   }
@@ -293,7 +311,7 @@ export async function handleTicketClaim(interaction) {
       new EmbedBuilder()
         .setColor(0x57F287)
         .setTitle('Ticket Claimed')
-        .setDescription(`${interaction.user} has claimed this ticket and will handle your request.`)
+        .setDescription(`${interaction.user} has claimed this ticket and will be handling your request.`)
         .setTimestamp(),
     ],
   });
@@ -326,28 +344,28 @@ export async function handleTicketAlert(interaction) {
   const closeAt    = Date.now() + 24 * 60 * 60 * 1000;
   const closeAtSec = Math.floor(closeAt / 1000);
 
-  const alertEmbed = new EmbedBuilder()
-    .setColor(0xFEE75C)
-    .setTitle('Inactivity Notice')
-    .setDescription(
-      `<@${ticket.userId}>, this ticket will be **automatically closed** if you do not respond.\n\n` +
-      `Closes: <t:${closeAtSec}:R> (<t:${closeAtSec}:f>)\n\n` +
-      `Reply in this channel to cancel the timer.`
-    )
-    .setFooter({ text: 'Timer cancels automatically when you send a message' })
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [alertEmbed] });
+  await interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xFEE75C)
+        .setTitle('Inactivity Notice')
+        .setDescription(
+          `<@${ticket.userId}>, this ticket will be **automatically closed** if you do not respond.\n\n` +
+          `Closes: <t:${closeAtSec}:R> (<t:${closeAtSec}:f>)\n\n` +
+          `Reply in this channel to cancel the timer.`
+        )
+        .setFooter({ text: 'Timer cancels automatically when you send a message' })
+        .setTimestamp(),
+    ],
+  });
   const alertMsg = await interaction.fetchReply();
 
   const timeout = setTimeout(async () => {
     const t = getTicketByChannel(channelId);
     if (!t || t.status !== 'open') return;
 
-    // Auto-close: DM the user
     try {
-      const guild  = interaction.guild;
-      const member = await guild.members.fetch(ticket.userId).catch(() => null);
+      const member = await interaction.guild.members.fetch(ticket.userId).catch(() => null);
       if (member) {
         await member.send({
           embeds: [
@@ -355,8 +373,8 @@ export async function handleTicketAlert(interaction) {
               .setColor(0xED4245)
               .setTitle('Your Ticket Was Automatically Closed')
               .setDescription(
-                `Your ticket **#${pad(t.number ?? '0')} — ${t.buttonName}** in **${guild.name}** was automatically closed due to inactivity.\n\n` +
-                `If you still need assistance, please open a new ticket.`
+                `Your ticket **#${pad(t.number ?? '0')} — ${t.buttonName}** in **${interaction.guild.name}** ` +
+                `was automatically closed due to inactivity.\n\nIf you still need assistance, please open a new ticket.`
               )
               .setTimestamp(),
           ],
@@ -364,15 +382,13 @@ export async function handleTicketAlert(interaction) {
       }
     } catch {}
 
-    // Credit staff
-    const msgs = getTicketMsgs(t.id);
-    const staffMsgs = {};
-    for (const [uid, count] of Object.entries(msgs)) {
-      if (uid !== t.userId) staffMsgs[uid] = count;
+    const cMsgs = getTicketMsgs(t.id);
+    const sMsgs = {};
+    for (const [uid, count] of Object.entries(cMsgs)) {
+      if (uid !== t.userId) sMsgs[uid] = count;
     }
-    const handledBy = t.claimedBy ??
-      (Object.entries(staffMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
-    if (Object.keys(staffMsgs).length) creditAllStaff(t.guildId, staffMsgs, handledBy);
+    const handledBy = t.claimedBy ?? (Object.entries(sMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
+    if (Object.keys(sMsgs).length) creditAllStaff(t.guildId, sMsgs, handledBy);
 
     const ch = interaction.guild.channels.cache.get(channelId);
     if (ch) {
@@ -396,7 +412,6 @@ export async function handleTicketAlert(interaction) {
   alertTimers.set(channelId, { timeout, alertMsgId: alertMsg.id, staffId: interaction.user.id });
 }
 
-// Called from messageCreate when the ticket owner sends a message
 export async function cancelAlertIfOwner(message, ticket) {
   const channelId = message.channel.id;
   if (!alertTimers.has(channelId)) return;
@@ -405,7 +420,6 @@ export async function cancelAlertIfOwner(message, ticket) {
   clearTimeout(timeout);
   alertTimers.delete(channelId);
 
-  // Update the alert embed to show it was cancelled
   try {
     const alertMsg = await message.channel.messages.fetch(alertMsgId);
     await alertMsg.edit({
@@ -422,71 +436,75 @@ export async function cancelAlertIfOwner(message, ticket) {
 
 // ── Transcript ────────────────────────────────────────────────────────────────
 
-async function sendTranscript(interaction, ticket, channel) {
-  await sendTranscriptDirect(interaction.guild, ticket, channel);
-}
-
+// Returns the URL of the posted transcript message (or null)
 export async function sendTranscriptDirect(guild, ticket, channel) {
   const transcriptChannelId = getTranscriptChannel(ticket.guildId);
-  if (!transcriptChannelId) return;
+  if (!transcriptChannelId) return null;
 
   const transcriptChannel = await guild.channels.fetch(transcriptChannelId).catch(() => null);
-  if (!transcriptChannel) return;
+  if (!transcriptChannel) return null;
 
   try {
-    const messages = await channel.messages.fetch({ limit: 100 });
-    const sorted   = [...messages.values()].reverse();
-    const lines    = sorted
-      .filter(m => !m.author.bot || m.embeds.length === 0)
-      .map(m => {
-        const ts      = `<t:${Math.floor(m.createdTimestamp / 1000)}:t>`;
-        const content = m.content || (m.embeds.length ? '[embed]' : '[attachment]');
-        return `**${m.author.tag}** ${ts}\n${content}`;
-      });
+    const fetched  = await channel.messages.fetch({ limit: 100 });
+    const messages = [...fetched.values()].reverse();
 
-    const openedBy = await guild.members.fetch(ticket.userId).catch(() => null);
-    const avatarURL = openedBy?.user.displayAvatarURL({ size: 128, extension: 'png' }) ?? null;
+    const openedAt = new Date(ticket.openedAt ?? Date.now());
+    const now      = new Date();
+
+    // Build a readable plain-text transcript
+    const divider  = '═'.repeat(60);
+    const lines    = [
+      divider,
+      `  TICKET TRANSCRIPT`,
+      `  Ticket #${pad(ticket.number ?? '0')} — ${ticket.buttonName}`,
+      divider,
+      `  Opened By  : ${ticket.userId}`,
+      `  Category   : ${ticket.buttonName}`,
+      `  Claimed By : ${ticket.claimedBy ?? 'Unclaimed'}`,
+      `  Closed At  : ${now.toUTCString()}`,
+      divider,
+      '',
+    ];
+
+    for (const m of messages) {
+      if (m.author.bot && m.content === '' && m.embeds.length > 0) continue;
+      const ts      = new Date(m.createdTimestamp).toUTCString();
+      const content = m.content || (m.embeds.length ? '[embed]' : m.attachments.size ? '[attachment]' : '[no content]');
+      lines.push(`[${ts}]  ${m.author.tag}`);
+      lines.push(`  ${content}`);
+      lines.push('');
+    }
+
+    lines.push(divider);
+    lines.push(`  End of Transcript — ${messages.length} message(s)`);
+    lines.push(divider);
+
+    const txtBuffer   = Buffer.from(lines.join('\n'), 'utf8');
+    const attachment  = new AttachmentBuilder(txtBuffer, {
+      name: `transcript-${ticket.buttonName.toLowerCase().replace(/\s+/g, '-')}-${pad(ticket.number ?? '0')}.txt`,
+    });
+
+    const openedMember = await guild.members.fetch(ticket.userId).catch(() => null);
+    const avatarURL    = openedMember?.user.displayAvatarURL({ size: 128, extension: 'png' }) ?? null;
 
     const headerEmbed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle(`Transcript — Ticket #${pad(ticket.number ?? '0')} (${ticket.buttonName})`)
       .addFields(
-        { name: 'Opened By',  value: `<@${ticket.userId}>`, inline: true },
-        { name: 'Category',   value: ticket.buttonName,     inline: true },
-        { name: 'Claimed By', value: ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Unclaimed', inline: true },
-        { name: 'Total Messages', value: String(lines.length), inline: true },
+        { name: 'Opened By',      value: `<@${ticket.userId}>`,                                   inline: true },
+        { name: 'Category',       value: ticket.buttonName,                                        inline: true },
+        { name: 'Claimed By',     value: ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Unclaimed', inline: true },
+        { name: 'Total Messages', value: String(messages.length),                                  inline: true },
+        { name: 'Closed At',      value: `<t:${Math.floor(Date.now() / 1000)}:f>`,                inline: true },
       )
+      .setThumbnail(avatarURL)
       .setTimestamp();
 
-    if (avatarURL) headerEmbed.setThumbnail(avatarURL);
-
-    await transcriptChannel.send({ embeds: [headerEmbed] });
-
-    // Split transcript into chunks that fit within embed limits
-    const chunks = [];
-    let current  = '';
-    for (const line of lines) {
-      if ((current + '\n\n' + line).length > 3900) {
-        chunks.push(current);
-        current = line;
-      } else {
-        current = current ? current + '\n\n' + line : line;
-      }
-    }
-    if (current) chunks.push(current);
-
-    for (let i = 0; i < chunks.length; i++) {
-      await transcriptChannel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setDescription(chunks[i])
-            .setFooter({ text: `Part ${i + 1} of ${chunks.length}` }),
-        ],
-      });
-    }
+    const transcriptMsg = await transcriptChannel.send({ embeds: [headerEmbed], files: [attachment] });
+    return transcriptMsg.url;
   } catch (e) {
     console.error('[TRANSCRIPT] Failed to send transcript:', e);
+    return null;
   }
 }
 
@@ -496,8 +514,13 @@ export async function handleTicketMessage(message) {
   const ticket = getTicketByChannel(message.channel.id);
   if (!ticket || ticket.status !== 'open') return;
 
-  // Always record messages for all participants
+  // Record message for all participants (used for credit on close)
   recordMessage(ticket.id, message.author.id);
+
+  // Live-update staff message counter immediately (not just on close)
+  if (message.author.id !== ticket.userId) {
+    incrementStaffMessages(ticket.guildId, message.author.id);
+  }
 
   // If ticket owner responds, cancel any active alert timer
   if (message.author.id === ticket.userId) {
