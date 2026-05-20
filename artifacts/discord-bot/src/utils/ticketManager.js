@@ -232,6 +232,10 @@ export async function handleTicketClose(interaction, channelOverride) {
   if (interaction.user.id !== ticket.userId && !staffMsgs[interaction.user.id]) {
     staffMsgs[interaction.user.id] = 0;
   }
+  // Always credit the claimer if they are not the ticket owner (even with 0 messages)
+  if (ticket.claimedBy && ticket.claimedBy !== ticket.userId && !staffMsgs[ticket.claimedBy]) {
+    staffMsgs[ticket.claimedBy] = 0;
+  }
   const handledBy = ticket.claimedBy ??
     (Object.entries(staffMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
   if (Object.keys(staffMsgs).length) creditAllStaff(ticket.guildId, staffMsgs, handledBy);
@@ -311,7 +315,9 @@ export async function handleTicketClaim(interaction) {
           components: [controlRow(channelId, true, interaction.user.username)],
         });
       }
-    } catch {}
+    } catch (e) {
+      console.error('[CLAIM] Failed to update header embed:', e);
+    }
   }
 
   await interaction.reply({
@@ -399,6 +405,10 @@ export async function handleTicketAlert(interaction) {
     const alertStaffId = alertTimers.get(channelId)?.staffId;
     if (alertStaffId && alertStaffId !== t.userId && !sMsgs[alertStaffId]) {
       sMsgs[alertStaffId] = 0;
+    }
+    // Always credit the claimer if not already credited
+    if (t.claimedBy && t.claimedBy !== t.userId && !sMsgs[t.claimedBy]) {
+      sMsgs[t.claimedBy] = 0;
     }
     const handledBy = t.claimedBy ?? (Object.entries(sMsgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null);
     if (Object.keys(sMsgs).length) creditAllStaff(t.guildId, sMsgs, handledBy);
