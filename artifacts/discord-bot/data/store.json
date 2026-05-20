@@ -88,15 +88,17 @@
       "userId": "928635423465537579",
       "buttonName": "Open",
       "number": 1,
-      "claimedBy": null,
+      "claimedBy": "928635423465537579",
       "headerMsgId": "1506532344444616714",
-      "status": "open"
+      "status": "closed"
     }
   },
   "ticketMsgs": {
     "3": {},
     "5": {},
-    "6": {}
+    "6": {
+      "928635423465537579": 5
+    }
   },
   "staff": {
     "1456279983407370426": {
@@ -116,6 +118,8 @@
   "ticketNumbers": {
     "1456279983407370426": 2
   },
-  "transcriptChannels": {},
+  "transcriptChannels": {
+    "1456279983407370426": "1506532949066252348"
+  },
   "_nextId": 7
 }
