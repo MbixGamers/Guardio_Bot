@@ -15,25 +15,51 @@ export default {
 
     if (sub === 'checks') {
       const staff = getStaff(g);
-      const rows  = Object.entries(staff).sort((a, b) => b[1].credits - a[1].credits).slice(0, 15);
-      if (!rows.length) return interaction.reply({ embeds: [info('Leaderboard', 'No activity recorded yet.')], ephemeral: true });
+      const rows  = Object.entries(staff)
+        .sort((a, b) => b[1].credits - a[1].credits)
+        .slice(0, 15);
+
+      if (!rows.length) {
+        return interaction.reply({
+          embeds: [info('No Activity Yet', 'No staff activity has been recorded. Activity is tracked when tickets are closed.')],
+          ephemeral: true,
+        });
+      }
 
       const medals = ['🥇', '🥈', '🥉'];
-      const desc   = rows.map(([uid, s], i) =>
-        `${medals[i] ?? `**${i + 1}.**`} <@${uid}> — **${s.credits}** credits | ${s.handled} tickets | ${s.messages} msgs`
-      ).join('\n');
+      const desc   = rows.map(([uid, s], i) => {
+        const rank = medals[i] ?? `**${i + 1}.**`;
+        const msgs = s.messages ?? 0;
+        return `${rank} <@${uid}>\n> Credits: **${s.credits}** | Tickets Handled: **${s.handled}** | Messages Sent: **${msgs}**`;
+      }).join('\n\n');
 
       return interaction.reply({
-        embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('Staff Activity Leaderboard').setDescription(desc)
-          .setFooter({ text: 'Credits based on active participation' }).setTimestamp()],
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setTitle('Staff Activity Leaderboard')
+            .setDescription(desc)
+            .setFooter({ text: 'Credits are awarded to every staff member who participates in a ticket' })
+            .setTimestamp(),
+        ],
       });
     }
 
     if (sub === 'reset') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator))
-        return interaction.reply({ embeds: [err('Denied', 'Admins only.')], ephemeral: true });
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ embeds: [err('Permission Denied', 'Only administrators can reset staff data.')], ephemeral: true });
+      }
       resetStaff(g);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('Reset').setDescription('All staff data cleared.')], ephemeral: true });
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x57F287)
+            .setTitle('Staff Data Reset')
+            .setDescription('All staff activity records have been cleared.')
+            .setTimestamp(),
+        ],
+        ephemeral: true,
+      });
     }
   },
 };

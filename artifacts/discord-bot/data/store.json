@@ -80,11 +80,23 @@
       "buttonName": "Open",
       "claimedBy": "928635423465537579",
       "status": "closed"
+    },
+    "1506532342724825088": {
+      "id": "6",
+      "channelId": "1506532342724825088",
+      "guildId": "1456279983407370426",
+      "userId": "928635423465537579",
+      "buttonName": "Open",
+      "number": 1,
+      "claimedBy": null,
+      "headerMsgId": "1506532344444616714",
+      "status": "open"
     }
   },
   "ticketMsgs": {
     "3": {},
-    "5": {}
+    "5": {},
+    "6": {}
   },
   "staff": {
     "1456279983407370426": {
@@ -101,5 +113,9 @@
     ]
   },
   "nukeLog": {},
-  "_nextId": 6
+  "ticketNumbers": {
+    "1456279983407370426": 2
+  },
+  "transcriptChannels": {},
+  "_nextId": 7
 }

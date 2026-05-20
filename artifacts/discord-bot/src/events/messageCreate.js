@@ -7,6 +7,7 @@ export default {
   async execute(message, client) {
     if (message.author.bot || !message.guild) return;
 
+    // Track ticket messages (all participants) and handle alert timer cancellation
     await handleTicketMessage(message);
 
     const settings = getSecurity(message.guild.id);

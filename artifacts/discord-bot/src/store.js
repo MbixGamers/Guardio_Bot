@@ -7,15 +7,17 @@ const DATA_DIR = join(__dirname, '../data');
 const FILE = join(DATA_DIR, 'store.json');
 
 const defaults = {
-  security: {},       // guildId -> { enabled, logChannelId, ... }
-  panels: {},         // guildId -> [{ id, number, title, description }]
-  buttons: {},        // guildId -> [{ id, panelId, name, emoji, description, categoryId, supportRoles[] }]
-  questionnaires: {}, // guildId:buttonId -> [{ id, label, required }]
-  tickets: {},        // channelId -> { id, guildId, userId, buttonName, claimedBy, status }
-  ticketMsgs: {},     // ticketId -> { userId: count }
-  staff: {},          // guildId -> { userId: { credits, handled, messages } }
-  blacklist: {},      // guildId -> [userId]
-  nukeLog: {},        // guildId -> { userId: [unixSec] }
+  security: {},           // guildId -> { enabled, logChannelId }
+  panels: {},             // guildId -> [{ id, number, title, description }]
+  buttons: {},            // guildId -> [{ id, panelId, name, emoji, description, categoryId, supportRoles[] }]
+  questionnaires: {},     // guildId:buttonId -> [{ id, label, required }]
+  tickets: {},            // channelId -> { id, guildId, userId, buttonName, claimedBy, status, number, headerMsgId }
+  ticketMsgs: {},         // ticketId -> { userId: count }
+  staff: {},              // guildId -> { userId: { credits, handled, messages } }
+  blacklist: {},          // guildId -> [userId]
+  nukeLog: {},            // guildId -> { userId: [unixSec] }
+  ticketNumbers: {},      // guildId -> nextNumber
+  transcriptChannels: {}, // guildId -> channelId
   _nextId: 1,
 };
 
@@ -25,14 +27,15 @@ export function initStore() {
   mkdirSync(DATA_DIR, { recursive: true });
   if (existsSync(FILE)) {
     try {
-      store = JSON.parse(readFileSync(FILE, 'utf8'));
+      const loaded = JSON.parse(readFileSync(FILE, 'utf8'));
+      store = { ...defaults, ...loaded };
     } catch {
       store = { ...defaults };
     }
   }
   setInterval(save, 30_000);
   process.on('exit', save);
-  process.on('SIGINT', () => { save(); process.exit(0); });
+  process.on('SIGINT',  () => { save(); process.exit(0); });
   process.on('SIGTERM', () => { save(); process.exit(0); });
   console.log('[STORE] Loaded.');
 }
@@ -73,7 +76,6 @@ export function addPanel(guildId, title, description) {
 
 export function deletePanel(guildId, panelId) {
   store.panels[guildId] = getPanels(guildId).filter(p => p.id !== panelId);
-  // Also clean up buttons
   store.buttons[guildId] = getButtons(guildId).filter(b => b.panelId !== panelId);
   save();
 }
@@ -112,18 +114,34 @@ export function setQuestionnaire(guildId, buttonId, fields) {
 
 // ── Tickets ──────────────────────────────────────────────────────────────────
 
+export function getNextTicketNumber(guildId) {
+  if (!store.ticketNumbers[guildId]) store.ticketNumbers[guildId] = 1;
+  return store.ticketNumbers[guildId]++;
+}
+
 export function getTicketByChannel(channelId) {
   return store.tickets[channelId] ?? null;
 }
 
-export function getOpenTicket(guildId, userId, buttonName) {
+// Returns any open ticket for this user in this guild (across all button types)
+export function getOpenTicket(guildId, userId) {
   return Object.values(store.tickets).find(
-    t => t.guildId === guildId && t.userId === userId && t.buttonName === buttonName && t.status === 'open'
+    t => t.guildId === guildId && t.userId === userId && t.status === 'open'
   ) ?? null;
 }
 
-export function createTicket(channelId, guildId, userId, buttonName) {
-  const ticket = { id: String(nextId()), channelId, guildId, userId, buttonName, claimedBy: null, status: 'open' };
+export function createTicket(channelId, guildId, userId, buttonName, ticketNumber) {
+  const ticket = {
+    id: String(nextId()),
+    channelId,
+    guildId,
+    userId,
+    buttonName,
+    number: ticketNumber,
+    claimedBy: null,
+    headerMsgId: null,
+    status: 'open',
+  };
   store.tickets[channelId] = ticket;
   store.ticketMsgs[ticket.id] = {};
   save();
@@ -137,6 +155,13 @@ export function claimTicket(channelId, userId) {
   }
 }
 
+export function setTicketHeaderMsg(channelId, msgId) {
+  if (store.tickets[channelId]) {
+    store.tickets[channelId].headerMsgId = msgId;
+    save();
+  }
+}
+
 export function closeTicket(channelId) {
   if (store.tickets[channelId]) {
     store.tickets[channelId].status = 'closed';
@@ -146,6 +171,7 @@ export function closeTicket(channelId) {
 
 // ── Ticket messages ──────────────────────────────────────────────────────────
 
+// Records a message for ANY user (staff or owner) — filtering is done by callers
 export function recordMessage(ticketId, userId) {
   if (!store.ticketMsgs[ticketId]) store.ticketMsgs[ticketId] = {};
   store.ticketMsgs[ticketId][userId] = (store.ticketMsgs[ticketId][userId] ?? 0) + 1;
@@ -162,20 +188,35 @@ export function getStaff(guildId) {
   return store.staff[guildId] ?? {};
 }
 
-export function creditStaff(guildId, userId, msgCount) {
+// Credits every staff member who participated; userMsgMap = { userId: msgCount }
+export function creditAllStaff(guildId, userMsgMap, handledUserId) {
   if (!store.staff[guildId]) store.staff[guildId] = {};
-  const s = store.staff[guildId][userId] ?? { credits: 0, handled: 0, messages: 0 };
-  store.staff[guildId][userId] = {
-    credits: s.credits + 1,
-    handled: s.handled + 1,
-    messages: s.messages + msgCount,
-  };
+  for (const [userId, msgCount] of Object.entries(userMsgMap)) {
+    const s = store.staff[guildId][userId] ?? { credits: 0, handled: 0, messages: 0 };
+    store.staff[guildId][userId] = {
+      credits:  s.credits  + 1,
+      handled:  s.handled  + (userId === handledUserId ? 1 : 0),
+      messages: s.messages + msgCount,
+    };
+  }
   save();
 }
 
 export function resetStaff(guildId) {
   store.staff[guildId] = {};
   save();
+}
+
+// ── Transcript channels ───────────────────────────────────────────────────────
+
+export function setTranscriptChannel(guildId, channelId) {
+  if (!store.transcriptChannels) store.transcriptChannels = {};
+  store.transcriptChannels[guildId] = channelId;
+  save();
+}
+
+export function getTranscriptChannel(guildId) {
+  return store.transcriptChannels?.[guildId] ?? null;
 }
 
 // ── Blacklist ────────────────────────────────────────────────────────────────
