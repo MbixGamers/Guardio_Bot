@@ -545,7 +545,9 @@ export async function handleTicketMessage(message) {
   recordMessage(ticket.id, message.author.id);
 
   // Live-update staff message counter immediately (not just on close)
-  if (message.author.id !== ticket.userId) {
+  // Also count messages from the ticket owner if they are the claimer (admin/staff testing)
+  const isStaffMessage = message.author.id !== ticket.userId || message.author.id === ticket.claimedBy;
+  if (isStaffMessage) {
     incrementStaffMessages(ticket.guildId, message.author.id);
   }
 
